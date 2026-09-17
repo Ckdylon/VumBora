@@ -1,0 +1,36 @@
+services:
+  servidor:
+    build: .
+    command: ./servidor
+    ports:
+      - "8080:8080"
+    networks:
+      - rede-vumbora
+
+  motorista:
+    build: .
+    command: ./motorista
+    environment:
+      - SERVER_ADDR=servidor:8080
+    stdin_open: true
+    tty: true
+    networks:
+      - rede-vumbora
+    depends_on:
+      - servidor
+
+  passageiro:
+    build: .
+    command: ./passageiro
+    environment:
+      - SERVER_ADDR=servidor:8080
+    stdin_open: true
+    tty: true
+    networks:
+      - rede-vumbora
+    depends_on:
+      - servidor
+
+networks:
+  rede-vumbora:
+    driver: bridge
