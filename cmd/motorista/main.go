@@ -11,11 +11,18 @@ import (
 	"vumbora/internal/dominio"
 )
 
+// evelopamento dos dados
+// op define o indetificador remoto da solicitação
+// data payload com parametros tipaods da operação
 type Request struct {
 	Op   string          `json:"op"`
 	Data json.RawMessage `json:"data"`
 }
 
+// evelope resposta
+// ok idica sucesso ou falha na transação
+// msg mesagem que traz informação para verificar ou exibir na tela
+// res dados que retorna da consulta
 type Response struct {
 	Ok  bool            `json:"ok"`
 	Msg string          `json:"msg"`

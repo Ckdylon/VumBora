@@ -13,7 +13,7 @@ import (
 // Envelopamento do protocolo
 type Request struct {
 	Op   string          `json:"op"`
-	Data json.RawMessage `json:"data"`
+	Data json.RawMessage `json:"data"` //payload especifico, desacopla o evelope do conteudo
 }
 
 // padronizar a resposta para cliente
@@ -49,6 +49,7 @@ func (srv *Server) Iniciar() error {
 	fmt.Printf("[TCP] Servidor Vumbora escutando em %s\n", srv.addr)
 
 	for {
+		//laço de escuta contínuo aguardando conexões
 		conn, err := l.Accept()
 		if err != nil {
 			fmt.Printf("Erro na conexao %s", err)
@@ -66,7 +67,7 @@ func (srv *Server) reply(conn net.Conn, res Response) {
 }
 
 func (srv *Server) handle(conn net.Conn) {
-	defer conn.Close()
+	defer conn.Close() //liberação do descritor de arquivos
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
@@ -81,11 +82,14 @@ func (srv *Server) handle(conn net.Conn) {
 
 		//roteador de operacoes
 		switch request.Op {
+		//os bytes do RawMessage são desseralizados aqui para a struct especifica
 		case "LOGIN":
 			var p struct {
 				Email string `json:"email"`
 				Senha string `json:"senha"`
 			}
+			//json.Unmarshal vai verificar o dado e se tiver dado mal formado, tipo de dado incompativel ou faltar campo, vai retorna um erro
+			//o servidor não derruba o goroutine, ele captura a falha e envia uma resposta estruturada, mantedo a conexão para proxima requisição
 			if err := json.Unmarshal(request.Data, &p); err != nil {
 				srv.reply(conn, Response{Ok: false, Msg: "dados de login invalidos"})
 				continue
@@ -128,9 +132,10 @@ func (srv *Server) handle(conn net.Conn) {
 				Destino      string `json:"destino"`
 				PassageiroID string `json:"passageiroid"`
 			}
+			//valida o formato e tipagem dos dados
 			if err := json.Unmarshal(request.Data, &payload); err != nil {
 				srv.reply(conn, Response{Ok: false, Msg: "dados da reserva invalido"})
-				continue
+				continue //nao derruba a conexao, apenas rejeita o pacote
 			}
 			if srv.m.Reservar(payload.CaronaID, payload.Origem, payload.Destino, payload.PassageiroID) {
 				srv.reply(conn, Response{Ok: true, Msg: "reserva confirmada"})

@@ -85,6 +85,7 @@ func autenticar(conexaoTCP net.Conn, leitorTerminal, leitorRede *bufio.Reader) s
 		senha, _ := leitorTerminal.ReadString('\n')
 		senha = strings.TrimSpace(senha)
 
+		//json.Marshal converte uma estrutura em um array de bytes e tem um append com o delimetador \n
 		payload, _ := json.Marshal(map[string]string{
 			"email": email,
 			"senha": senha,
@@ -92,7 +93,7 @@ func autenticar(conexaoTCP net.Conn, leitorTerminal, leitorRede *bufio.Reader) s
 		req, _ := json.Marshal(MensagemRequisicao{Op: "LOGIN", Data: payload})
 		conexaoTCP.Write(append(req, '\n'))
 
-		resStr, err := leitorRede.ReadString('\n')
+		resStr, err := leitorRede.ReadString('\n') //desserializa o evelope raiz
 		if err != nil {
 			fmt.Println("Erro de rede ao logar.")
 			continue

@@ -3,7 +3,7 @@ services:
     build: .
     command: ./servidor
     ports:
-      - "8080:8080"
+      - "8080:8080" #expoe a rede fiica para outras maquinas
     networks:
       - rede-vumbora
 
@@ -11,8 +11,8 @@ services:
     build: .
     command: ./motorista
     environment:
-      - SERVER_ADDR=servidor:8080
-    stdin_open: true
+      - SERVER_ADDR=servidor:8080 #interno do docker
+    stdin_open: true     #habilita a entrad interativa do teclado
     tty: true
     networks:
       - rede-vumbora

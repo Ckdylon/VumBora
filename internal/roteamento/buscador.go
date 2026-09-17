@@ -165,6 +165,7 @@ func (g *GerenciadorCaronas) monitorAutenticacao() {
 
 // monitor de caronas isolado, lista de caronas separada de contador de ID
 func (g *GerenciadorCaronas) monitorCaronas() {
+	//estado privado, inpedindo que as thread externa toque nessa variaveis
 	caronas := make([]dominio.Carona, 0)
 	contadorID := 0
 
@@ -345,7 +346,7 @@ func reservarMemoria(caronas []dominio.Carona, caronaID, origem, destino, passag
 	if caronaRef == nil || !caronaRef.Ativa {
 		return false
 	}
-
+	//valida todos antes de modificar qualquer um
 	idxOrigem, idxDestino := -1, -1
 	for i, tr := range caronaRef.Trechos {
 		if tr.Cancelado {
@@ -597,6 +598,7 @@ func trechosDisponiveis(c dominio.Carona, de, ate int) bool {
 
 // Verifica se há assentos livres em todos os trechos de uma carona
 func temVagaDireta(c dominio.Carona, origem, destino string) bool {
+	//localiza e valida a direção topologica
 	idxOrigem, idxDestino := -1, -1
 	for i, tr := range c.Trechos {
 		if tr.CidadeOrigem == origem && idxOrigem == -1 {
