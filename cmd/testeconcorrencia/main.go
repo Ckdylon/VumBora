@@ -179,7 +179,7 @@ func prepararCenario(addr string) string {
 
 	// Publicar carona com 1 assento
 	pubPayload, _ := json.Marshal(map[string]interface{}{
-		"motorista_id": "mot_teste@teste.com",
+		"motoristaid": "mot_teste@teste.com",
 		"data":         DataViagem,
 		"preco":        30.0,
 		"assentos":     1, // Apenas UMA vaga para 20 pessoas disputarem
