@@ -82,7 +82,7 @@ A comunicação ocorre via streaming TCP delimitado por `\n`. Todas as mensagens
  | `{"email": string, "senha": string}` |
 | `PUBLICAR`<br> | Publicação de carona pelo motorista
 
- | `{"motorista_id": string, "data": string, "preco": float, "assentos": int, "rota": [string]}` |
+ | `{"motoristaid": string, "data": string, "preco": float, "assentos": int, "rota": [string]}` |
 | `BUSCAR`<br> | Consulta de itinerários disponíveis
 
  | `{"origem": string, "destino": string, "data": string}` |
@@ -91,13 +91,13 @@ A comunicação ocorre via streaming TCP delimitado por `\n`. Todas as mensagens
  | `{"caronaid": string, "origem": string, "destino": string, "passageiroid": string}` |
 | `MINHASVIAGENS`<br> | Consulta de reservas do passageiro
 
- | `{"passageiro_id": string}` |
-| `MINHAS_CARONAS`<br> | Painel de controle do motorista
+ | `{"passageiroid": string}` |
+| `MINHASCARONAS`<br> | Painel de controle do motorista
 
  | `{"motoristaid": string}` |
 | `CANCELARRESERVA`<br> | Liberação de assento pelo passageiro
 
- | `{"carona_id": string, "origem": string, "destino": string, "passageiroid": string}` |
+ | `{"caronaid": string, "origem": string, "destino": string, "passageiroid": string}` |
 | `CANCELARTRECHO`<br> | Cancelamento de segmento pelo motorista
 
  | `{"caronaid": string, "motoristaid": string, "origem": string, "destino": string}` |
