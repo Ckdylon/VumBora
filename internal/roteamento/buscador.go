@@ -26,10 +26,18 @@ type reqBusca struct {
 	origem  string
 	destino string
 	data    time.Time
-	resp    chan []dominio.Itinerario
+	resp    chan []ItinerarioComposto
 }
 
 type reqReserva struct {
+	caronaID     string
+	origem       string
+	destino      string
+	passageiroID string
+	resp         chan bool
+}
+
+type reqCancelarReserva struct {
 	caronaID     string
 	origem       string
 	destino      string
@@ -76,27 +84,59 @@ type GerenciadorCaronas struct {
 
 	//canais dedicados para gestão de viagens
 	//usando um para cada funcionalidade
-	publicarChan       chan reqPublicar
-	buscaChan          chan reqBusca
-	reservaChan        chan reqReserva
-	listarMotChan      chan reqListarMotorista
-	listarPassChan     chan reqListarPassageiro
-	cancelarCaronaChan chan reqCancelarCarona
-	cancelarTrechoChan chan reqCancelarTrecho
+	publicarChan         chan reqPublicar
+	buscaChan            chan reqBusca
+	reservaChan          chan reqReserva
+	listarMotChan        chan reqListarMotorista
+	listarPassChan       chan reqListarPassageiro
+	cancelarCaronaChan   chan reqCancelarCarona
+	cancelarTrechoChan   chan reqCancelarTrecho
+	cancelarReservaChan  chan reqCancelarReserva
+	reservarCompostaChan chan ReqReservaComposta
+}
+
+type TrechoViagem struct {
+	CaronaID      string  `json:"caronaid"`
+	MotoristaID   string  `json:"motoristaid"`
+	CidadeOrigem  string  `json:"cidadeorigem"`
+	CidadeDestino string  `json:"cidadedestino"`
+	Valor         float64 `json:"valor"`
+}
+
+type ItinerarioComposto struct {
+	ItinerarioID string         `json:"itinerarioid"`
+	Trechos      []TrechoViagem `json:"trechos"`
+	ValorTotal   float64        `json:"valortotal"`
+	Baldeacoes   int            `json:"baldeacoes"`
+}
+
+type ItemReserva struct {
+	CaronaID string
+	Origem   string
+	Destino  string
+}
+
+type ReqReservaComposta struct {
+	PassageiroID string
+	Itens        []ItemReserva
+	Resp         chan bool
 }
 
 // Criação de um construtor
 // o ponteiro * serve no Go para modificar a struct original em memoria
 func NovoGerenciador() *GerenciadorCaronas {
 	g := &GerenciadorCaronas{
-		authChan:           make(chan reqAuth, 50),
-		publicarChan:       make(chan reqPublicar, 50),
-		buscaChan:          make(chan reqBusca, 50),
-		reservaChan:        make(chan reqReserva, 100),
-		listarMotChan:      make(chan reqListarMotorista, 50),
-		listarPassChan:     make(chan reqListarPassageiro, 50),
-		cancelarCaronaChan: make(chan reqCancelarCarona, 50),
-		cancelarTrechoChan: make(chan reqCancelarTrecho, 50),
+		//inicializando os canais
+		authChan:             make(chan reqAuth, 50),
+		publicarChan:         make(chan reqPublicar, 50),
+		buscaChan:            make(chan reqBusca, 50),
+		reservaChan:          make(chan reqReserva, 100),
+		listarMotChan:        make(chan reqListarMotorista, 50),
+		listarPassChan:       make(chan reqListarPassageiro, 50),
+		cancelarCaronaChan:   make(chan reqCancelarCarona, 50),
+		cancelarTrechoChan:   make(chan reqCancelarTrecho, 50),
+		cancelarReservaChan:  make(chan reqCancelarReserva, 50),
+		reservarCompostaChan: make(chan ReqReservaComposta, 50),
 		//inicialização do canal principal. o 100 ou 50 é uma recomendação da documentação do Go, para o buffer não travar imediatemente
 	}
 	// obter um contexto no momento em quq o sistema sobe
@@ -138,7 +178,7 @@ func (g *GerenciadorCaronas) monitorCaronas() {
 			req.resp <- req.carona.Id
 
 		case req := <-g.buscaChan:
-			req.resp <- buscarMemoria(caronas, req.origem, req.destino, req.data)
+			req.resp <- buscarComBaldeacao(caronas, req.origem, req.destino, req.data)
 
 		case req := <-g.reservaChan:
 			req.resp <- reservarMemoria(caronas, req.caronaID, req.origem, req.destino, req.passageiroID)
@@ -152,8 +192,31 @@ func (g *GerenciadorCaronas) monitorCaronas() {
 		case req := <-g.cancelarCaronaChan:
 			req.resp <- cancelarCaronaMemoria(caronas, req.caronaID, req.motoristaID)
 
+		case req := <-g.cancelarReservaChan:
+			req.resp <- cancelarReservaMemoria(caronas, req.caronaID, req.origem, req.destino, req.passageiroID)
 		case req := <-g.cancelarTrechoChan:
 			req.resp <- cancelarTrechoMemoria(caronas, req.caronaID, req.motoristaID, req.origem, req.destino)
+		case req := <-g.reservarCompostaChan:
+			//Verificação atômica prévia (Checa TODOS os trechos de TODOS os motoristas)
+			todosDisponiveis := true
+			for _, item := range req.Itens {
+				if !verificarDisponibilidade(caronas, item.CaronaID, item.Origem, item.Destino) {
+					todosDisponiveis = false
+					break
+				}
+			}
+
+			// FASE 2: Confirmação ou Aborto imediato
+			if !todosDisponiveis {
+				req.Resp <- false // Se qualquer perna da viagem falhar, nenhuma vaga é consumida
+				continue
+			}
+
+			// Efetiva a reserva em todas as caronas envolvidas
+			for _, item := range req.Itens {
+				efetivarReserva(caronas, item.CaronaID, item.Origem, item.Destino, req.PassageiroID)
+			}
+			req.Resp <- true
 		}
 	}
 }
@@ -172,8 +235,8 @@ func (g *GerenciadorCaronas) PublicarCarona(c dominio.Carona) string {
 	return <-resposta
 }
 
-func (g *GerenciadorCaronas) BuscarItinerarios(origem, destino string, data time.Time) []dominio.Itinerario {
-	resposta := make(chan []dominio.Itinerario)
+func (g *GerenciadorCaronas) BuscarItinerarios(origem, destino string, data time.Time) []ItinerarioComposto {
+	resposta := make(chan []ItinerarioComposto)
 	g.buscaChan <- reqBusca{origem: origem, destino: destino, data: data, resp: resposta}
 	return <-resposta
 }
@@ -373,4 +436,222 @@ func cancelarTrechoMemoria(caronas []dominio.Carona, caronaID, motoristaID, orig
 		}
 	}
 	return false
+}
+func (g *GerenciadorCaronas) CancelarReserva(caronaID, origem, destino, passageiroID string) bool {
+	resposta := make(chan bool)
+	g.cancelarReservaChan <- reqCancelarReserva{
+		caronaID:     caronaID,
+		origem:       origem,
+		destino:      destino,
+		passageiroID: passageiroID,
+		resp:         resposta,
+	}
+	return <-resposta
+}
+
+func cancelarReservaMemoria(caronas []dominio.Carona, caronaID, origem, destino, passageiroID string) bool {
+	var caronaRef *dominio.Carona
+	for i := range caronas {
+		if caronas[i].Id == caronaID {
+			caronaRef = &caronas[i]
+			break
+		}
+	}
+
+	if caronaRef == nil {
+		return false
+	}
+
+	idxOrigem, idxDestino := -1, -1
+	for i, tr := range caronaRef.Trechos {
+		if tr.CidadeOrigem == origem && idxOrigem == -1 {
+			idxOrigem = i
+		}
+		if tr.CidadeDestino == destino && idxOrigem != -1 {
+			idxDestino = i
+			break
+		}
+	}
+
+	if idxOrigem == -1 || idxDestino == -1 || idxOrigem > idxDestino {
+		return false
+	}
+
+	// Verifica se o passageiro realmente está em todos os trechos do percurso
+	for i := idxOrigem; i <= idxDestino; i++ {
+		encontrado := false
+		for _, p := range caronaRef.Trechos[i].Passageiros {
+			if p == passageiroID {
+				encontrado = true
+				break
+			}
+		}
+		if !encontrado {
+			return false
+		}
+	}
+
+	// Remove o passageiro e libera o assento
+	for i := idxOrigem; i <= idxDestino; i++ {
+		trecho := &caronaRef.Trechos[i]
+		if trecho.AssentosOcupados > 0 {
+			trecho.AssentosOcupados--
+		}
+		var novaLista []string
+		for _, p := range trecho.Passageiros {
+			if p != passageiroID {
+				novaLista = append(novaLista, p)
+			}
+		}
+		trecho.Passageiros = novaLista
+	}
+
+	return true
+}
+
+// procura viagens diretas e viagens com 1 conexao entre motoristas
+func buscarComBaldeacao(caronas []dominio.Carona, origem, destino string, data time.Time) []ItinerarioComposto {
+	var resultados []ItinerarioComposto
+
+	// 1. Caronas Diretas (Mesmo motorista)
+	for _, c := range caronas {
+		if c.DataPartida.Format("2006-01-02") != data.Format("2006-01-02") {
+			continue
+		}
+		// Verifica se c possui o trecho origem -> destino com vagas...
+		if temVagaDireta(c, origem, destino) {
+			resultados = append(resultados, ItinerarioComposto{
+				ItinerarioID: c.Id,
+				Trechos: []TrechoViagem{
+					{CaronaID: c.Id, MotoristaID: c.MotoristaID, CidadeOrigem: origem, CidadeDestino: destino, Valor: c.ValorPorTrecho},
+				},
+				ValorTotal: c.ValorPorTrecho,
+				Baldeacoes: 0,
+			})
+		}
+	}
+
+	// 2. Caronas com Conexão (Motorista 1 faz Origem -> X, Motorista 2 faz X -> Destino)
+	for _, c1 := range caronas {
+		if c1.DataPartida.Format("2006-01-02") != data.Format("2006-01-02") {
+			continue
+		}
+
+		for _, tr1 := range c1.Trechos {
+			if tr1.CidadeOrigem != origem || tr1.AssentosOcupados >= c1.AssentosDisponiveis {
+				continue
+			}
+			cidadeConexao := tr1.CidadeDestino
+
+			// Procura outro motorista partindo da cidade de conexão
+			for _, c2 := range caronas {
+				if c2.Id == c1.Id || c2.DataPartida.Format("2006-01-02") != data.Format("2006-01-02") {
+					continue
+				}
+
+				for _, tr2 := range c2.Trechos {
+					if tr2.CidadeOrigem == cidadeConexao && tr2.CidadeDestino == destino && tr2.AssentosOcupados < c2.AssentosDisponiveis {
+						resultados = append(resultados, ItinerarioComposto{
+							ItinerarioID: fmt.Sprintf("%s+%s", c1.Id, c2.Id),
+							Trechos: []TrechoViagem{
+								{CaronaID: c1.Id, MotoristaID: c1.MotoristaID, CidadeOrigem: origem, CidadeDestino: cidadeConexao, Valor: c1.ValorPorTrecho},
+								{CaronaID: c2.Id, MotoristaID: c2.MotoristaID, CidadeOrigem: cidadeConexao, CidadeDestino: destino, Valor: c2.ValorPorTrecho},
+							},
+							ValorTotal: c1.ValorPorTrecho + c2.ValorPorTrecho,
+							Baldeacoes: 1,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return resultados
+}
+
+func encontrarIndices(c dominio.Carona, origem, destino string) (int, int) {
+	idxOrigem, idxDestino := -1, -1
+	for i, tr := range c.Trechos {
+		if tr.Cancelado {
+			continue
+		}
+		if tr.CidadeOrigem == origem && idxOrigem == -1 {
+			idxOrigem = i
+		}
+		if tr.CidadeDestino == destino && idxOrigem != -1 {
+			idxDestino = i
+			break
+		}
+	}
+	return idxOrigem, idxDestino
+}
+
+func trechosDisponiveis(c dominio.Carona, de, ate int) bool {
+	for i := de; i <= ate; i++ {
+		if c.Trechos[i].Cancelado || c.Trechos[i].AssentosOcupados >= c.AssentosDisponiveis {
+			return false
+		}
+	}
+	return true
+}
+
+// Verifica se há assentos livres em todos os trechos de uma carona
+func temVagaDireta(c dominio.Carona, origem, destino string) bool {
+	idxOrigem, idxDestino := -1, -1
+	for i, tr := range c.Trechos {
+		if tr.CidadeOrigem == origem && idxOrigem == -1 {
+			idxOrigem = i
+		}
+		if tr.CidadeDestino == destino && idxOrigem != -1 {
+			idxDestino = i
+			break
+		}
+	}
+
+	if idxOrigem == -1 || idxDestino == -1 || idxOrigem > idxDestino {
+		return false
+	}
+
+	for i := idxOrigem; i <= idxDestino; i++ {
+		if c.Trechos[i].AssentosOcupados >= c.AssentosDisponiveis {
+			return false
+		}
+	}
+	return true
+}
+
+// Reutiliza temVagaDireta buscando a carona pelo ID
+func verificarDisponibilidade(caronas []dominio.Carona, caronaID, origem, destino string) bool {
+	for _, c := range caronas {
+		if c.Id == caronaID {
+			return temVagaDireta(c, origem, destino)
+		}
+	}
+	return false
+}
+
+// Ocupa os assentos e registra o passageiro nos trechos selecionados
+func efetivarReserva(caronas []dominio.Carona, caronaID, origem, destino, passageiroID string) {
+	for i := range caronas {
+		if caronas[i].Id == caronaID {
+			idxOrigem, idxDestino := -1, -1
+			for j, tr := range caronas[i].Trechos {
+				if tr.CidadeOrigem == origem && idxOrigem == -1 {
+					idxOrigem = j
+				}
+				if tr.CidadeDestino == destino && idxOrigem != -1 {
+					idxDestino = j
+					break
+				}
+			}
+
+			if idxOrigem != -1 && idxDestino != -1 && idxOrigem <= idxDestino {
+				for j := idxOrigem; j <= idxDestino; j++ {
+					caronas[i].Trechos[j].AssentosOcupados++
+					caronas[i].Trechos[j].Passageiros = append(caronas[i].Trechos[j].Passageiros, passageiroID)
+				}
+			}
+			return
+		}
+	}
 }

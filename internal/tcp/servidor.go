@@ -224,6 +224,23 @@ func (srv *Server) handle(conn net.Conn) {
 			} else {
 				srv.reply(conn, Response{Ok: false, Msg: "falha ao cancelar trecho"})
 			}
+		case "CANCELARRESERVA":
+			var p struct {
+				CaronaID     string `json:"caronaid"`
+				Origem       string `json:"origem"`
+				Destino      string `json:"destino"`
+				PassageiroID string `json:"passageiroid"`
+			}
+			if err := json.Unmarshal(request.Data, &p); err != nil {
+				srv.reply(conn, Response{Ok: false, Msg: "dados invalidos"})
+				continue
+			}
+
+			if srv.m.CancelarReserva(p.CaronaID, p.Origem, p.Destino, p.PassageiroID) {
+				srv.reply(conn, Response{Ok: true, Msg: "reserva cancelada com sucesso"})
+			} else {
+				srv.reply(conn, Response{Ok: false, Msg: "reserva nao encontrada"})
+			}
 		case "PING":
 			srv.reply(conn, Response{Ok: true, Msg: "PONG"})
 		default:

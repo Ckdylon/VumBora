@@ -52,7 +52,8 @@ func main() {
 		fmt.Println("\nMENU PASSAGEIRO (" + emailPassageiro + ")")
 		fmt.Println("[1] Buscar e Reservar Carona")
 		fmt.Println("[2] Minhas Viagens")
-		fmt.Println("[3] Sair")
+		fmt.Println("[3] Cancelar Reserva")
+		fmt.Println("[4] Sair")
 		fmt.Print("Escolha uma opção: ")
 
 		opcaoMenu, _ := leitorTerminal.ReadString('\n')
@@ -64,6 +65,8 @@ func main() {
 		case "2":
 			listarMinhasViagens(conexaoTCP, leitorRede, emailPassageiro)
 		case "3":
+			cancelarReserva(conexaoTCP, leitorTerminal, leitorRede, emailPassageiro)
+		case "4":
 			return
 		default:
 			fmt.Println("Opção inválida")
@@ -222,5 +225,73 @@ func listarMinhasViagens(conn net.Conn, out *bufio.Reader, email string) {
 	for _, v := range viagens {
 		fmt.Printf("• Carona %s | Data: %s | %s -> %s | Valor: R$ %.2f\n",
 			v.CaronaID, v.Data, v.Origem, v.Destino, v.Valor)
+	}
+}
+
+// isola e retorna as viagens em fatias para usar no cancelador de rezervas ou em outras funções
+func obterViagens(conn net.Conn, out *bufio.Reader, email string) []roteamento.MinhaViagem {
+	payload, _ := json.Marshal(map[string]string{
+		"passageiroid": email,
+	})
+
+	req, _ := json.Marshal(MensagemRequisicao{Op: "MINHASVIAGENS", Data: payload})
+	conn.Write(append(req, '\n'))
+
+	resStr, err := out.ReadString('\n')
+	if err != nil {
+		return nil
+	}
+
+	var res MensagemResposta
+	json.Unmarshal([]byte(resStr), &res)
+	if !res.Ok {
+		return nil
+	}
+
+	var viagens []roteamento.MinhaViagem
+	json.Unmarshal(res.Res, &viagens)
+	return viagens
+}
+
+func cancelarReserva(conn net.Conn, leitorTerminal, leitorRede *bufio.Reader, email string) {
+	viagens := obterViagens(conn, leitorRede, email)
+	if len(viagens) == 0 {
+		fmt.Println("Você não possui reservas para cancelar.")
+		return
+	}
+
+	fmt.Println("\nEscolha qual reserva deseja cancelar:")
+	for i, v := range viagens {
+		fmt.Printf("[%d] Carona %s | %s -> %s | Data: %s\n", i+1, v.CaronaID, v.Origem, v.Destino, v.Data)
+	}
+
+	fmt.Print("\nDigite o número da viagem (ou 0 para voltar): ")
+	escolhaStr, _ := leitorTerminal.ReadString('\n')
+	escolha, _ := strconv.Atoi(strings.TrimSpace(escolhaStr))
+
+	if escolha >= 1 && escolha <= len(viagens) {
+		escolhida := viagens[escolha-1]
+		payload, _ := json.Marshal(map[string]string{
+			"caronaid":     escolhida.CaronaID,
+			"origem":       escolhida.Origem,
+			"destino":      escolhida.Destino,
+			"passageiroid": email,
+		})
+		req, _ := json.Marshal(MensagemRequisicao{Op: "CANCELARRESERVA", Data: payload})
+		conn.Write(append(req, '\n'))
+
+		resStr, err := leitorRede.ReadString('\n')
+		if err != nil {
+			fmt.Println("Erro de rede ao cancelar.")
+			return
+		}
+
+		var res MensagemResposta
+		json.Unmarshal([]byte(resStr), &res)
+		if res.Ok {
+			fmt.Println("Reserva cancelada com sucesso! O assento foi liberado.")
+		} else {
+			fmt.Printf("Problema no cancelamento: %s\n", res.Msg)
+		}
 	}
 }
