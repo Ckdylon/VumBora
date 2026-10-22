@@ -1,36 +1,50 @@
 services:
-  servidor:
+  empresa-a:
     build: .
-    command: ./servidor
+    container_name: vumbora-empresa-a
+    environment:
+      - EMPRESA_ID=EMP_A
+      - TCP_ADDR=:8080
+      - HTTP_ADDR=:8081
+      - DATA_FILE=/data/emp_a.json
+      - PEERS=EMP_B=http://empresa-b:8081,EMP_C=http://empresa-c:8081
     ports:
-      - "8080:8080" #expoe a rede fiica para outras maquinas
-    networks:
-      - rede-vumbora
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - dados_emp_a:/data
 
-  motorista:
+  empresa-b:
     build: .
-    command: ./motorista
+    container_name: vumbora-empresa-b
     environment:
-      - SERVER_ADDR=servidor:8080 #interno do docker
-    stdin_open: true     #habilita a entrad interativa do teclado
-    tty: true
-    networks:
-      - rede-vumbora
-    depends_on:
-      - servidor
+      - EMPRESA_ID=EMP_B
+      - TCP_ADDR=:8080
+      - HTTP_ADDR=:8081
+      - DATA_FILE=/data/emp_b.json
+      - PEERS=EMP_A=http://empresa-a:8081,EMP_C=http://empresa-c:8081
+    ports:
+      - "8090:8080"
+      - "8091:8081"
+    volumes:
+      - dados_emp_b:/data
 
-  passageiro:
+  empresa-c:
     build: .
-    command: ./passageiro
+    container_name: vumbora-empresa-c
     environment:
-      - SERVER_ADDR=servidor:8080
-    stdin_open: true
-    tty: true
-    networks:
-      - rede-vumbora
-    depends_on:
-      - servidor
+      - EMPRESA_ID=EMP_C
+      - TCP_ADDR=:8080
+      - HTTP_ADDR=:8081
+      - DATA_FILE=/data/emp_c.json
+      - PEERS=EMP_A=http://empresa-a:8081,EMP_B=http://empresa-b:8081
+    ports:
+      - "8100:8080"
+      - "8101:8081"
+    volumes:
+      - dados_emp_c:/data
 
-networks:
-  rede-vumbora:
-    driver: bridge
+volumes:
+  dados_emp_a:
+  dados_emp_b:
+  dados_emp_c:

@@ -7,6 +7,7 @@ WORKDIR /app
 COPY . .
 
 # Compila os servidor, motorista e passageiro
+RUN mkdir -p /data && go build -o /app/servidor ./cmd/servidor
 RUN go build -o /bin/servidor ./cmd/servidor
 RUN go build -o /bin/motorista ./cmd/motorista
 RUN go build -o /bin/passageiro ./cmd/passageiro
@@ -15,6 +16,7 @@ RUN go build -o /bin/passageiro ./cmd/passageiro
 FROM alpine:latest
 
 WORKDIR /app
+EXPOSE 8080 8081
 
 # Traz os executáveis do estágio anterior
 COPY --from=builder /bin/servidor .
