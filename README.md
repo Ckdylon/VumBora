@@ -133,13 +133,6 @@ go run ./cmd/motorista localhost:8100
 # Passageiro conectado apenas à Empresa A busca e reserva trechos de A, B e C:
 go run ./cmd/passageiro localhost:8080
 ```
-
-> **Nota para execução em múltiplos computadores físicos no laboratório (LARSID / LADICA):**
-> Em cada computador, suba o contêiner da respectiva empresa parametrizando a variável `PEERS` com os IPs reais das máquinas vizinhas:
-> ```bash
-> EMPRESA_ID=EMP_A TCP_ADDR=:8080 HTTP_ADDR=:8081 DATA_FILE=/data/emp_a.json PEERS="EMP_B=http://192.168.1.12:8081,EMP_C=http://192.168.1.13:8081" go run ./cmd/servidor
-> ```
-
 ---
 
 ### Opção 2: Execução Nativa com Go (Em 3 Terminais Locais)
