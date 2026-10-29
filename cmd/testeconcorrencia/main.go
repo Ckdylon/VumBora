@@ -31,9 +31,13 @@ const (
 
 func main() {
 	addr := os.Getenv("SERVER_ADDR")
-	if addr == "" {
-		addr = "localhost:8080"
-	}
+	// le o ip passado como argumento no terminal
+	if len(os.Args) > 1 {
+        addr = os.Args[1]
+    }
+    if addr == "" {
+        addr = "localhost:8080"
+    }
 
 	fmt.Println("=====================================================")
 	fmt.Println("   VUMBORA - Teste automatizado de concorrência")
@@ -180,10 +184,10 @@ func prepararCenario(addr string) string {
 	// Publicar carona com 1 assento
 	pubPayload, _ := json.Marshal(map[string]interface{}{
 		"motoristaid": "mot_teste@teste.com",
-		"data":         DataViagem,
-		"preco":        30.0,
-		"assentos":     1, // Apenas UMA vaga para 20 pessoas disputarem
-		"rota":         []string{CidadeOrigem, CidadeDestino},
+		"data":        DataViagem,
+		"preco":       30.0,
+		"assentos":    1, // Apenas UMA vaga para 20 pessoas disputarem
+		"rota":        []string{CidadeOrigem, CidadeDestino},
 	})
 	conn.Write(append([]byte(fmt.Sprintf(`{"op":"PUBLICAR","data":%s}`, pubPayload)), '\n'))
 	in.ReadString('\n')
@@ -201,7 +205,7 @@ func prepararCenario(addr string) string {
 	json.Unmarshal([]byte(resStr), &res)
 
 	var itinerarios []struct {
-		CaronaID string `json:"caronaid"`
+		CaronaID string `json:"itinerarioid"`
 	}
 	json.Unmarshal(res.Res, &itinerarios)
 

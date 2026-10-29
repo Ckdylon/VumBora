@@ -31,13 +31,18 @@ type Response struct {
 
 func main() {
 	enderecoServidor := os.Getenv("SERVER_ADDR")
-	if enderecoServidor == "" {
-		enderecoServidor = "localhost:8080" // se estiver vazio permite eu testar localmente
+	if len(os.Args) > 1 {
+		enderecoServidor = os.Args[1]
 	}
 
+	if enderecoServidor == "" {
+		enderecoServidor = "localhost:8080" // se estiver vazio permite testar localmente
+	}
+	
 	conn, err := net.Dial("tcp", enderecoServidor)
+	fmt.Printf("Conectando ao servidor: %s \n", enderecoServidor)
 	if err != nil {
-		fmt.Printf("erro ao conectar: %v\n", err)
+		fmt.Printf("erro na conexao com o servidor %v\n", err)
 		return
 	}
 	defer conn.Close()

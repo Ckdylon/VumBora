@@ -30,11 +30,16 @@ type PayloadBusca struct {
 func main() {
 
 	enderecoServidor := os.Getenv("SERVER_ADDR")
+	if len(os.Args) > 1 {
+		enderecoServidor = os.Args[1]
+	}
+
 	if enderecoServidor == "" {
 		enderecoServidor = "localhost:8080" // se estiver vazio permite testar localmente
 	}
 
 	conexaoTCP, err := net.Dial("tcp", enderecoServidor)
+	fmt.Printf("Conectando ao servidor: %s \n", enderecoServidor)
 	if err != nil {
 		fmt.Printf("erro na conexao com o servidor %v\n", err)
 		return
@@ -151,11 +156,14 @@ func buscarEReservar(conexaoTCP net.Conn, leitorTerminal, leitorRede *bufio.Read
 	}
 
 	var itinerarios []struct {
-		CaronaID string `json:"caronaid"`
+		CaronaID string `json:"itinerarioid"`
 		Trechos  []struct {
-			Origem  string `json:"cidadeorigem"`
-			Destino string `json:"cidadedestino"`
-		} `json:"trechosconectados"`
+			EmpresaID string  `json:"empresaid"`
+			CaronaID  string  `json:"caronaid"`
+			Origem    string  `json:"cidadeorigem"`
+			Destino   string  `json:"cidadedestino"`
+			Valor     float64 `json:"valor"`
+		} `json:"trechos"`
 		Valor float64 `json:"valortotal"`
 	}
 	json.Unmarshal(res.Res, &itinerarios)
@@ -167,9 +175,9 @@ func buscarEReservar(conexaoTCP net.Conn, leitorTerminal, leitorRede *bufio.Read
 
 	fmt.Println("\n Itinerários Encontrados:")
 	for i, it := range itinerarios {
-		fmt.Printf("[%d] Carona %s | Valor: R$ %.2f\n", i+1, it.CaronaID, it.Valor)
+		fmt.Printf("[%d] Itinerário %s | Valor Total: R$ %.2f\n", i+1, it.CaronaID, it.Valor)
 		for _, tr := range it.Trechos {
-			fmt.Printf("    Trecho: %s -> %s\n", tr.Origem, tr.Destino)
+			fmt.Printf("    Trecho [%s - %s]: %s -> %s (R$ %.2f)\n", tr.EmpresaID, tr.CaronaID, tr.Origem, tr.Destino, tr.Valor)
 		}
 	}
 

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
+	"strconv"
 	"time"
 	"vumbora/internal/dominio"
 	"vumbora/internal/roteamento"
@@ -36,6 +38,120 @@ func NovoServidor(addr string, m *roteamento.GerenciadorCaronas) *Server {
 		addr: addr,
 		m:    m,
 	}
+}
+
+// servidor reset
+// registra os endpoints HTTP exigidos para comunicacao entre servidores
+func (srv *Server) NovoMuxREST() *http.ServeMux {
+	mux := http.NewServeMux()
+
+	// GET /consorcio/caronas data=YYYY-MM-DD
+	mux.HandleFunc("/consorcio/caronas", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "metodo nao permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		dataFiltro := r.URL.Query().Get("data")
+		var lamportRem uint64
+		if tsStr := r.URL.Query().Get("lamportts"); tsStr != "" {
+			lamportRem, _ = strconv.ParseUint(tsStr, 10, 64)
+		}
+
+		res := srv.m.ObterCaronasLocais(dataFiltro, lamportRem)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(res)
+	})
+
+	// POST /consorcio/reservas/preparar
+	mux.HandleFunc("/consorcio/reservas/preparar", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "metodo nao permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		var req dominio.RestPrepareRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "json invalido", http.StatusBadRequest)
+			return
+		}
+		res := srv.m.PreReservarLocal(req)
+		w.Header().Set("Content-Type", "application/json")
+		if res.Ok {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusConflict)
+		}
+		_ = json.NewEncoder(w).Encode(res)
+	})
+
+	// POST /consorcio/reservas/confirmar (Commit)
+	mux.HandleFunc("/consorcio/reservas/confirmar", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "metodo nao permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		var req dominio.RestDecisionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "json invalido", http.StatusBadRequest)
+			return
+		}
+		res := srv.m.ConfirmarReservaLocal(req)
+		w.Header().Set("Content-Type", "application/json")
+		if res.Ok {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusConflict)
+		}
+		_ = json.NewEncoder(w).Encode(res)
+	})
+
+	// POST /consorcio/reservas/abortar
+	mux.HandleFunc("/consorcio/reservas/abortar", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "metodo nao permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		var req dominio.RestDecisionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "json invalido", http.StatusBadRequest)
+			return
+		}
+		res := srv.m.AbortarReservaLocal(req)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(res)
+	})
+	// POST /consorcio/reservas/cancelar (Cancelamento posterior pelo passageiro)
+	mux.HandleFunc("/consorcio/reservas/cancelar", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "metodo nao permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		var req dominio.RestDecisionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "json invalido", http.StatusBadRequest)
+			return
+		}
+		ok := srv.m.CancelarReserva(req.CaronaID, req.Origem, req.Destino, req.PassageiroID)
+		w.Header().Set("Content-Type", "application/json")
+		if ok {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusConflict)
+		}
+		_ = json.NewEncoder(w).Encode(dominio.RestStatusResponse{
+			Ok:        ok,
+			EmpresaID: srv.m.EmpresaID(),
+		})
+	})
+	return mux
+
+}
+
+// sobe o servidor HTTP para comunicacao entre as empresas
+func (srv *Server) IniciarREST(httpAddr string) error {
+	fmt.Printf("[REST] API do Consorcio (%s) escutando em %s\n", srv.m.EmpresaID(), httpAddr)
+	return http.ListenAndServe(httpAddr, srv.NovoMuxREST())
 }
 
 // start no socket para começar as conexoes
@@ -128,6 +244,7 @@ func (srv *Server) handle(conn net.Conn) {
 		case "RESERVAR":
 			var payload struct {
 				CaronaID     string `json:"caronaid"`
+				ItinerarioID string `json:"itinerarioid"`
 				Origem       string `json:"origem"`
 				Destino      string `json:"destino"`
 				PassageiroID string `json:"passageiroid"`
@@ -137,7 +254,11 @@ func (srv *Server) handle(conn net.Conn) {
 				srv.reply(conn, Response{Ok: false, Msg: "dados da reserva invalido"})
 				continue //nao derruba a conexao, apenas rejeita o pacote
 			}
-			if srv.m.Reservar(payload.CaronaID, payload.Origem, payload.Destino, payload.PassageiroID) {
+			idAlvo := payload.CaronaID
+			if idAlvo == "" {
+				idAlvo = payload.ItinerarioID
+			}
+			if srv.m.Reservar(idAlvo, payload.Origem, payload.Destino, payload.PassageiroID) {
 				srv.reply(conn, Response{Ok: true, Msg: "reserva confirmada"})
 			} else { // verificação para inpedir do motorista fazer reserva em assento indisponivel
 				srv.reply(conn, Response{Ok: false, Msg: "assento indisponivel"})
