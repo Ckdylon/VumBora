@@ -69,9 +69,9 @@ A comunicação entre os clientes CLI e o servidor da sua respectiva empresa oco
 | --- | --- | --- |
 | `LOGIN` | Autenticação inicial do socket | `{"email": string, "senha": string}` |
 | `PUBLICAR` | Publicação de carona pelo motorista | `{"motoristaid": string, "data": string, "preco": float, "assentos": int, "rota": [string]}` |
-| `BUSCAR` | Busca federada de itinerários no consórcio | `{"origem": string, "destino": string, "data": string}` |
+| `BUSCAR` | Busca distribuída de itinerários no consórcio | `{"origem": string, "destino": string, "data": string}` |
 | `RESERVAR` | Confirmação atômica (Direta ou 2PC Composta) | `{"caronaid": string, "origem": string, "destino": string, "passageiroid": string}` |
-| `MINHASVIAGENS` | Consulta federada de reservas do passageiro | `{"passageiroid": string}` |
+| `MINHASVIAGENS` | Consulta distribuída de reservas do passageiro | `{"passageiroid": string}` |
 | `MINHASCARONAS` | Painel de controle do motorista | `{"motoristaid": string}` |
 | `CANCELARRESERVA` | Liberação de assento (local ou remota) | `{"caronaid": string, "origem": string, "destino": string, "passageiroid": string}` |
 | `CANCELARTRECHO` | Cancelamento de segmento pelo motorista | `{"caronaid": string, "motoristaid": string, "origem": string, "destino": string}` |
@@ -138,7 +138,7 @@ go run ./cmd/passageiro localhost:8100
 
 ---
 
-### Modo 2: Emulação em 3 Máquinas Físicas Distintas no Laboratório (LADICA / LARSID)
+### Modo 2: Emulação em 3 Máquinas Físicas Distintas no Laboratório
 
 O `docker-compose.yml` suporta interpolação das variáveis `URL_EMP_A`, `URL_EMP_B` e `URL_EMP_C`, permitindo executar cada empresa em um computador físico diferente sem alterar o código-fonte:
 
