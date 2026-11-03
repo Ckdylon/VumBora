@@ -1,10 +1,10 @@
-# Vumbora - Sistema Distribuído de Caronas Compartilhadas (Consórcio Federado)
+# Vumbora - Sistema Distribuído de Caronas Compartilhadas
 
-O **Vumbora** é uma aplicação distribuída e federada para gerenciamento, publicação, busca e reserva atômica de caronas intermunicipais compartilhadas, desenvolvida para o módulo de Concorrência e Conectividade (TEC502) da UEFS.
+O **Vumbora** é uma aplicação distribuída para gerenciamento, publicação, busca e reserva atômica de caronas intermunicipais compartilhadas, desenvolvida para o módulo de Concorrência e Conectividade (TEC502) da UEFS.
 
 Na transição para o **Problema 2**, o projeto evoluiu de uma arquitetura centralizada para um **consórcio peer-to-peer entre empresas regionais autônomas** (`EMP_A`, `EMP_B`, `EMP_C`), operando sem servidor central, sem coordenador fixo e sem banco de dados compartilhado. Os clientes (motoristas e passageiros) conectam-se exclusivamente via sockets TCP/IP puros ao servidor da sua própria empresa (utilizando protocolo JSON delimitado por `\n`), enquanto os servidores cooperam entre si através de uma **API REST sobre HTTP/1.1**.
 
-Todo o gerenciamento de estado compartilhado e concorrência local em cada servidor segue estritamente o modelo **CSP (*Communicating Sequential Processes*)**, delegando o controle de dados a uma *Goroutine Monitora* e canais nativos, eliminando o uso de travas manuais (*mutexes*). A coordenação distribuída entre empresas é garantida pelo protocolo **Two-Phase Commit (2PC)** com coordenador transiente, **Relógios Lógicos de Lamport** com preempção na Fase 1, bloqueios temporários com expiração (*lease* com TTL de 3s) e persistência atômica em disco.
+Todo o gerenciamento de estado compartilhado e concorrência local em cada servidor segue estritamente o modelo **CSP (*Communicating Sequential Processes*)**, delegando o controle de dados a uma *Goroutine Monitora* e canais nativos, eliminando o uso de travas manuais (*mutexes*). A coordenação distribuída entre empresas é garantida pelo protocolo **Two-Phase Commit (2PC)** com coordenador transiente, **Relógios Lógicos de Lamport** com preempção na Fase 1, prevenção de *deadlock* por ordenação canônica de recursos, bloqueios temporários com expiração (*lease* com TTL de 3s) e persistência atômica em disco.
 
 ---
 
@@ -35,7 +35,7 @@ vumbora/
 │       └── consorcio_test.go
 ├── API_REST.md               # Especificação completa da API REST e Diagrama de Sequência
 ├── Dockerfile                # Build da imagem do servidor com volume de persistência
-├── docker-compose.yml        # Orquestração do consórcio com 3 empresas isoladas
+├── docker-compose.yml        # Orquestração híbrida (1 máquina ou 3 máquinas físicas)
 ├── go.mod                    # Definição do módulo Go
 └── README.md
 ```
@@ -44,7 +44,7 @@ vumbora/
 
 - **`cmd/*`**: Contém as funções `main()` independentes para cada nó do sistema distribuído (servidor da empresa, cliente motorista, cliente passageiro, simulador autônomo de carga e teste de concorrência).
 - **`internal/dominio`**: Define as estruturas de dados centrais (`Carona`, `TrechoCarona`, `PreReserva`), a regra de precedência total do Relógio Lógico de Lamport (`TemPrecedenciaSobre`) e os contratos JSON da API REST.
-- **`internal/roteamento`**: Núcleo transacional e motor de roteamento do servidor. O `GerenciadorCaronas` centraliza a memória via canais Go dentro de um laço `select` (`monitorCaronas`), gerencia a expiração de pré-reservas por TTL (`time.Ticker`), atua como coordenador transiente do protocolo 2PC, calcula rotas multi-salto entre $N$ empresas via Busca em Largura (BFS) e persiste o estado em disco.
+- **`internal/roteamento`**: Núcleo transacional e motor de roteamento do servidor. O `GerenciadorCaronas` centraliza a memória via canais Go dentro de um laço `select` (`monitorCaronas`), gerencia a expiração de pré-reservas por TTL (`time.Ticker`), atua como coordenador transiente do protocolo 2PC com prevenção de *deadlock*, calcula rotas multi-salto entre $N$ empresas via Busca em Largura (BFS) e persiste o estado em disco.
 - **`internal/tcp`**: Camada de rede responsável por escutar clientes via sockets TCP (`net.Listen`), expor os endpoints HTTP da API REST do consórcio (`net/http`) e executar a suíte de testes automatizados sob carga e injeção de falhas (`consorcio_test.go`).
 
 ---
@@ -94,16 +94,16 @@ A cooperação entre os servidores das empresas utiliza HTTP/1.1 com payloads JS
 ## Pré-requisitos
 
 - **Go** versão 1.21 ou superior instalada (para execução nativa, simulador e testes).
-- **Docker** e **Docker Compose** (para execução isolada das 3 empresas em contêineres).
+- **Docker** e **Docker Compose** (para execução isolada das empresas em contêineres).
 - Acesso à rede local (para execução distribuída entre múltiplos computadores no laboratório).
 
 ---
 
 ## Como Executar
 
-### Opção 1: Execução do Consórcio via Docker Compose (Recomendada)
+### Modo 1: Emulação em 1 Única Máquina via Docker Compose
 
-O arquivo `docker-compose.yml` sobe simultaneamente **3 servidores isolados** representando três empresas distintas do consórcio, cada uma com seu próprio volume persistente:
+O arquivo `docker-compose.yml` sobe simultaneamente **3 servidores isolados** representando três empresas distintas do consórcio usando a rede interna do Docker por padrão:
 - **Empresa A (`EMP_A`)**: TCP em `localhost:8080` | REST em `localhost:8081`
 - **Empresa B (`EMP_B`)**: TCP em `localhost:8090` | REST em `localhost:8091`
 - **Empresa C (`EMP_C`)**: TCP em `localhost:8100` | REST em `localhost:8101`
@@ -114,28 +114,80 @@ O arquivo `docker-compose.yml` sobe simultaneamente **3 servidores isolados** re
 docker compose up --build -d
 ```
 
-**2. Conectar o Cliente Motorista a uma das empresas (ex: Empresa A, B ou C):**
+**2. Conectar o Cliente Motorista ou Passageiro (na mesma máquina):**
 
 ```bash
 # Conectando à Empresa A (porta 8080):
 go run ./cmd/motorista localhost:8080
+go run ./cmd/passageiro localhost:8080
 
 # Conectando à Empresa B (porta 8090):
 go run ./cmd/motorista localhost:8090
+go run ./cmd/passageiro localhost:8090
 
 # Conectando à Empresa C (porta 8100):
 go run ./cmd/motorista localhost:8100
+go run ./cmd/passageiro localhost:8100
 ```
 
-**3. Conectar o Cliente Passageiro à sua empresa:**
+> **Atenção ao conectar clientes a partir de outro computador na rede:**
+> Não utilize `localhost` se o servidor Docker estiver rodando em outra bancada (pois `localhost` aponta para `127.0.0.1` da própria máquina local e causará `connection refused`). Descubra o IP da máquina do servidor com `hostname -I` e informe o IP real:
+> ```bash
+> go run ./cmd/passageiro 172.16.10.25:8080
+> ```
 
-```bash
-# Passageiro conectado apenas à Empresa A busca e reserva trechos de A, B e C:
-go run ./cmd/passageiro localhost:8080
-```
 ---
 
-### Opção 2: Execução Nativa com Go (Em 3 Terminais Locais)
+### Modo 2: Emulação em 3 Máquinas Físicas Distintas no Laboratório (LADICA / LARSID)
+
+O `docker-compose.yml` suporta interpolação das variáveis `URL_EMP_A`, `URL_EMP_B` e `URL_EMP_C`, permitindo executar cada empresa em um computador físico diferente sem alterar o código-fonte:
+
+**1. Descobrir o IP de cada computador do laboratório:**
+Em cada uma das 3 máquinas, execute no terminal:
+```bash
+hostname -I
+```
+*(Exemplo: Máquina 1 = `172.16.10.11`, Máquina 2 = `172.16.10.12`, Máquina 3 = `172.16.10.13`).*
+
+**2. Subir apenas o contêiner da respectiva empresa em cada máquina:**
+
+- **Na Máquina 1 (Executa apenas a `empresa-a` apontando para os IPs de B e C):**
+```bash
+URL_EMP_B=http://172.16.10.12:8091 URL_EMP_C=http://172.16.10.13:8101 docker compose up --build -d empresa-a
+```
+
+- **Na Máquina 2 (Executa apenas a `empresa-b` apontando para os IPs de A e C):**
+```bash
+URL_EMP_A=http://172.16.10.11:8081 URL_EMP_C=http://172.16.10.13:8101 docker compose up --build -d empresa-b
+```
+
+- **Na Máquina 3 (Executa apenas a `empresa-c` apontando para os IPs de A e B):**
+```bash
+URL_EMP_A=http://172.16.10.11:8081 URL_EMP_B=http://172.16.10.12:8091 docker compose up --build -d empresa-c
+```
+
+**3. Conectar os clientes e o simulador às 3 máquinas físicas:**
+```bash
+# Cliente passageiro da Empresa A (rodando na Máquina 1 ou em outra estação):
+go run ./cmd/passageiro 172.16.10.11:8080
+
+# Simulador de carga disparando contra as 3 máquinas físicas simultaneamente:
+SERVERS_TCP="172.16.10.11:8080,172.16.10.12:8090,172.16.10.13:8100" go run ./cmd/simulador/main.go
+```
+
+**4. Provocar e observar a falha e recuperação de um servidor durante a apresentação:**
+```bash
+# Interromper o servidor da Empresa C:
+docker stop vumbora-empresa-c
+
+# Observar que buscas e reservas entre Empresa A e Empresa B continuam operando normalmente.
+# Em seguida, religar o servidor da Empresa C e verificar a recuperação do estado via disco:
+docker start vumbora-empresa-c
+```
+
+---
+
+### Modo 3: Execução Nativa com Go (Sem Docker, em 3 Terminais)
 
 **Terminal 1 (Servidor Empresa A):**
 ```bash
@@ -201,8 +253,11 @@ go test -v ./internal/tcp
 Gera autonomamente a malha inter-regional (`Salvador -> Feira -> Conquista -> Montes Claros`) nas 3 empresas e dispara uma rajada concorrente de 30 passageiros realizando buscas e reservas simultâneas via TCP:
 
 ```bash
-# Com os 3 servidores rodando (via Docker Compose ou localmente):
+# Em máquina única (portas padrão localhost:8080, 8090, 8100):
 go run ./cmd/simulador/main.go
+
+# Ou apontando para 3 máquinas distintas na rede do laboratório:
+SERVERS_TCP="172.16.10.11:8080,172.16.10.12:8090,172.16.10.13:8100" go run ./cmd/simulador/main.go
 ```
 
 ---
@@ -210,6 +265,7 @@ go run ./cmd/simulador/main.go
 ## Destaques de Engenharia e Arquitetura
 
 - **Concorrência Segura sem Locks (CSP):** As requisições vindas tanto dos sockets TCP quanto das rotas HTTP REST não acessam estruturas de memória diretamente; todas são serializadas via canais tipados na goroutine `monitorCaronas`.
-- **Atomicidade Multi-Empresa (Protocolo 2PC sem Coordenador Fixo):** O servidor onde o passageiro está conectado atua como coordenador transiente, executando a Fase 1 (`PREPARE`) e a Fase 2 (`COMMIT` ou `ABORT`) em todas as empresas do itinerário.
+- **Atomicidade Multi-Empresa (Protocolo 2PC sem Coordenador Fixo):** O servidor onde o passageiro está conectado atua como coordenador transiente, executando a Fase 1 (`PREPARE`) e a Fase 2 (`COMMIT` ou `ABORT`) em todas as empresas do itinerário, com idempotência por `TxID`.
 - **Precedência Determinística (Relógios Lógicos de Lamport):** Na ausência de sincronização física de relógios, cada evento carrega a estampa lógica $(L_i, \text{EmpresaCoord}, \text{TxID})$. Em disputas simultâneas pelo último assento durante a janela de preparação, transações com menor estampa lógica preemptam bloqueios provisórios de menor prioridade.
+- **Prevenção de *Deadlock* Distribuído:** Combina ordenação canônica global dos trechos por `(EmpresaID, CaronaID)` antes da Fase 1 (eliminando espera circular), política não bloqueante (*no-wait*) e expiração automática de bloqueios por TTL.
 - **Tolerância a Falhas com *Lease* (TTL) e Persistência Atômica:** Pré-reservas possuem tempo máximo de vida de 3 segundos para evitar retenção perpétua de assentos em caso de queda do coordenador, e todas as reservas confirmadas são gravadas atomicamente em disco (`write-and-rename`) para recuperação consistente após reinicializações.
