@@ -12,7 +12,7 @@ Para ordenação total e sincronização causal de eventos sem dependência de r
 ## 2. Recursos e Endpoints do Consórcio
 
 ### 2.1. Consulta de Caronas Disponíveis na Empresa Parceira
-Retorna as caronas ativas gerenciadas localmente pela empresa consultada para composição de itinerários federados no grafo de busca em largura (BFS). As pré-reservas temporárias ativas já são contabilizadas no campo `assentosocupados` exportado.
+Retorna as caronas ativas gerenciadas localmente pela empresa consultada para composição de itinerários distribuídos no grafo de busca em largura (BFS). As pré-reservas temporárias ativas já são contabilizadas no campo `assentosocupados` exportado.
 
 * **Método e Caminho:** `GET /consorcio/caronas`
 * **Parâmetros de Query (Opcionais):**
@@ -168,7 +168,7 @@ Remove imediatamente a pré-reserva associada ao `txid` (ou reverte a reserva de
 
 ---
 
-### 2.5. Cancelamento Posterior de Reserva Federada (`CANCEL`)
+### 2.5. Cancelamento Posterior de Reserva Distribuída (`CANCEL`)
 Permite que um passageiro conectado ao servidor da sua própria empresa cancele posteriormente uma reserva já confirmada em carona pertencente a outra empresa do consórcio.
 
 * **Método e Caminho:** `POST /consorcio/reservas/cancelar`
@@ -217,7 +217,7 @@ Permite que um passageiro conectado ao servidor da sua própria empresa cancele 
 
 ## 4. Diagrama de Sequência da Confirmação de Itinerário Multi-Empresa
 
-O diagrama abaixo detalha o fluxo completo de busca federada e confirmação atômica via protocolo *Two-Phase Commit* (2PC) de um itinerário composto por trechos em três empresas distintas (`EMP_A`, `EMP_B` e `EMP_C`):
+O diagrama abaixo detalha o fluxo completo de busca distribuída e confirmação atômica via protocolo *Two-Phase Commit* (2PC) de um itinerário composto por trechos em três empresas distintas (`EMP_A`, `EMP_B` e `EMP_C`):
 
 ```mermaid
 sequenceDiagram
